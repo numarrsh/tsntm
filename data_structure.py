@@ -80,14 +80,12 @@ def sort_data(data, train):
     return docl_dict
 
 def load_data(config):
-    datapath = os.path.join(config.datadir, config.dataname)
-    train, dev, test, embeddings, word_to_id = cPickle.load(open(datapath, 'rb'), encoding='latin1')
-    trainset, devset, testset = DataSet(train, train=True), DataSet(dev, train=False), DataSet(test, train=False)
+    instances_train, instances_dev, instances_test, word_to_idx, idx_to_word, bow_idxs = cPickle.load(open(config.data_path,'rb'))
+    trainset, devset, testset = DataSet(instances_train, train=True), DataSet(instances_dev, train=False), DataSet(instances_test, train=False)
     print('Number of train examples: %i' % trainset.num_examples)
-    vocab = dict([(v, k) for k,v in word_to_id.items()])
     train_batches = trainset.get_batches(config.batch_size, config.epochs, rand=True)
     dev_batches = devset.get_batches(config.batch_size, 1, rand=False)
     test_batches = testset.get_batches(config.batch_size, 1, rand=False)
     dev_batches = [i for i in dev_batches]
     test_batches = [i for i in test_batches]
-    return train_batches, dev_batches, test_batches, embeddings, vocab, word_to_id
+    return trainset.num_examples, train_batches, dev_batches, test_batches, word_to_idx, idx_to_word, bow_idxs
