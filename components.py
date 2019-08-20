@@ -15,7 +15,7 @@ def tf_log(x):
         
 def sample_latents(means, logvars):
     # reparameterize
-    noises = tf.random_normal(tf.shape(means))
+    noises = tf.random.normal(tf.shape(means))
     latents = means + tf.exp(0.5 * logvars) * noises
     return latents
 
