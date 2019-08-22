@@ -91,7 +91,7 @@ class Instance:
 #     test_batches = [i for i in test_batches]
 #     return trainset.num_examples, train_batches, dev_batches, test_batches, word_to_idx, idx_to_word, bow_idxs
 
-def get_batches(instances, batch_size):
+def get_batches(instances, batch_size, iterator=False):
     "n_sents_batch: number of sentences in a batch"
     n_sents_all = sum([instance.doc_l for instance in instances])
     n_batch = n_sents_all//batch_size
@@ -105,5 +105,7 @@ def get_batches(instances, batch_size):
     
     assert sum([len(batch) for i, batch in batches]) == n_instances
     assert sum([sum([instance.doc_l for instance in batch]) for i, batch in batches]) == n_sents_all
+    
+    if iterator: batches = iter(batches)
     
     return batches
