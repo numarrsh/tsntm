@@ -32,11 +32,11 @@ def dynamic_rnn(inputs, seqlen, n_hidden, keep_prob, cell_name='', reuse=False):
         fw_cell = tf.contrib.rnn.DropoutWrapper(fw_cell, output_keep_prob = keep_prob)
         fw_initial_state = fw_cell.zero_state(batch_size, tf.float32)
     with tf.variable_scope(cell_name, reuse=reuse):
-        outputs, output_states = tf.nn.dynamic_rnn(fw_cell, inputs,
+        outputs, output_state = tf.nn.dynamic_rnn(fw_cell, inputs,
                                                                  initial_state=fw_initial_state,
                                                                  sequence_length=seqlen, 
                                                                  dtype=tf.float32)
-    return outputs, output_states    
+    return outputs, output_state    
 
 def dynamic_bi_rnn(inputs, seqlen, n_hidden, keep_prob, cell_name='', reuse=False):
     batch_size = tf.shape(inputs)[0]
@@ -49,11 +49,14 @@ def dynamic_bi_rnn(inputs, seqlen, n_hidden, keep_prob, cell_name='', reuse=Fals
         bw_cell = tf.contrib.rnn.DropoutWrapper(bw_cell, output_keep_prob = keep_prob)
         bw_initial_state = bw_cell.zero_state(batch_size, tf.float32)
     with tf.variable_scope(cell_name, reuse=reuse):
-        outputs, output_states = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, inputs,
+        outputs, bi_output_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, inputs,
                                                                  initial_state_fw=fw_initial_state,
                                                                  initial_state_bw=bw_initial_state,
                                                                  sequence_length=seqlen)
-    return outputs, output_states    
+    
+    output_state = tf.concat(list(bi_output_state), 1)
+    
+    return outputs, output_state    
 
 def gaussian_diag_logps(mean, logvar, sample=None):
     if sample is None:
