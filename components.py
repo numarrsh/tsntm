@@ -22,8 +22,17 @@ def sample_latents(means, logvars):
 def compute_kl_loss(means, logvars, means_prior=None, logvars_prior=None):
     if means_prior is None and logvars_prior is None:
         kl_losses = tf.reduce_sum(-0.5 * (logvars - tf.square(means) - tf.exp(logvars) + 1.0), 1) # sum over latent dimentsion    
-        kl_loss = tf.reduce_mean(kl_losses, [0]) #mean of kl_losses over batches
+    elif means_prior is not None:
+        kl_losses = tf.reduce_sum(-0.5 * (logvars - tf.square(means-means_prior) - tf.exp(logvars) + 1.0), 1) # sum over latent dimentsion    
+    kl_loss = tf.reduce_mean(kl_losses, [0]) #mean of kl_losses over batches        
     return kl_loss
+
+def compute_kl_losses(means, logvars, means_prior=None, logvars_prior=None):
+    if means_prior is None and logvars_prior is None:
+        kl_losses = tf.reduce_sum(-0.5 * (logvars - tf.square(means) - tf.exp(logvars) + 1.0), 1) # sum over latent dimentsion    
+    elif means_prior is not None:
+        kl_losses = tf.reduce_sum(-0.5 * (logvars - tf.square(means-means_prior) - tf.exp(logvars) + 1.0), 1) # sum over latent dimentsion    
+    return kl_losses
 
 def dynamic_rnn(inputs, seqlen, n_hidden, keep_prob, cell_name='', reuse=False):
     batch_size = tf.shape(inputs)[0]
