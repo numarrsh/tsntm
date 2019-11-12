@@ -25,37 +25,10 @@ class Instance:
         return k
 
 def get_batches(instances, batch_size, iterator=False):
-    "n_sents_batch: number of sentences in a batch"
-    n_sents_all = sum([instance.doc_l for instance in instances])
-    n_batch = n_sents_all//batch_size
-
-    n_instances = len(instances)
-    n_instances_batch = math.ceil(n_instances/n_batch)
-
-    batch_idxs = np.concatenate([np.random.permutation(np.arange(n_batch)) for i in range(n_instances_batch)])[:n_instances]
-    sorted_instances = np.array(sorted(instances, key=lambda x: x.doc_l, reverse=True))
-    batches = [(i, list(sorted_instances[np.where(batch_idxs == i)])) for i in range(n_batch)]
+    iter_instances = iter(instances)
+    n_batch = len(instances)//batch_size
     
-    assert sum([len(batch) for i, batch in batches]) == n_instances
-    assert sum([sum([instance.doc_l for instance in batch]) for i, batch in batches]) == n_sents_all
+    batches = [(i_batch, [next(iter_instances) for i_doc in range(batch_size)]) for i_batch in range(n_batch)]
     
     if iterator: batches = iter(batches)
-    
-    return batches
-
-def get_test_batches(instances, batch_size, iterator=False):
-    n_sents_all = sum([instance.doc_l for instance in instances])
-    n_instances = len(instances)
-    
-    item_idx_instances = defaultdict(list)
-    for instance in instances:
-        item_idx_instances[instance.item_idx].append(instance)
-    
-    batches = [(i, instances) for i, instances in enumerate(item_idx_instances.values())]
-    
-    assert sum([len(batch) for i, batch in batches]) == n_instances
-    assert sum([sum([instance.doc_l for instance in batch]) for i, batch in batches]) == n_sents_all
-    
-    if iterator: batches = iter(batches)
-    
     return batches
