@@ -34,25 +34,26 @@ def validate(sess, batches, model):
     
     return loss_mean, topic_loss_recon_mean, topic_loss_kl_mean, topic_loss_reg_mean, ppl_mean, rads_bow_mean, probs_topic_mean
 
-def print_topic_sample(sess, model, recur_prob_topic=None, topic_prob_topic=None, topic_freq_token=None, parent_idx=0, depth=0):
+def print_topic_sample(sess, model, topic_prob_topic=None, recur_prob_topic=None, topic_freq_tokens=None, parent_idx=0, depth=0):
     if depth == 0: # print root
-        freq_token = topic_freq_token[parent_idx]
+        assert len(topic_prob_topic) == len(recur_prob_topic) == len(topic_freq_tokens)
+        freq_tokens = topic_freq_tokens[parent_idx]
         recur_topic = recur_prob_topic[parent_idx]
         prob_topic = topic_prob_topic[parent_idx]
-        print(parent_idx, 'R: %.3f' % recur_topic, 'P: %.3f' % prob_topic, freq_token)
+        print(parent_idx, 'R: %.3f' % recur_topic, 'P: %.3f' % prob_topic, ' '.join(freq_tokens))
     
     child_idxs = model.tree_idxs[parent_idx]
     depth += 1
     for child_idx in child_idxs:
-        freq_token = topic_freq_token[child_idx]
+        freq_tokens = topic_freq_tokens[child_idx]
         recur_topic = recur_prob_topic[child_idx]
         prob_topic = topic_prob_topic[child_idx]
-        print('  '*depth, child_idx, 'R: %.3f' % recur_topic, 'P: %.3f' % prob_topic, freq_token)
+        print('  '*depth, child_idx, 'R: %.3f' % recur_topic, 'P: %.3f' % prob_topic, ' '.join(freq_tokens))
         
         if child_idx in model.tree_idxs: 
-            print_topic_sample(sess, model, recur_prob_topic=recur_prob_topic, topic_prob_topic=topic_prob_topic, parent_idx=child_idx, topic_freq_token=topic_freq_token, depth=depth)
+            print_topic_sample(sess, model, topic_prob_topic=topic_prob_topic, recur_prob_topic=recur_prob_topic, topic_freq_tokens=topic_freq_tokens, parent_idx=child_idx, depth=depth)
             
-def print_topic_specialization(sess, model, instances):
+def get_topic_specialization(sess, model, instances):
     topics_bow = sess.run(model.topic_bow)
     norm_bow = np.sum([instance.bow for instance in instances], 0)
     topics_vec = topics_bow / np.linalg.norm(topics_bow, axis=1, keepdims=True)
@@ -64,12 +65,14 @@ def print_topic_specialization(sess, model, instances):
     for topic_idx, depth in model.tree_depth.items():
         depth_topic_idxs[depth].append(topic_idx)
 
+    depth_specs = {}
     for depth, topic_idxs in depth_topic_idxs.items():
         topic_indices = np.array([model.topic_idxs.index(topic_idx) for topic_idx in topic_idxs])
         depth_spec = np.mean(topics_spec[topic_indices])
-        print(depth, depth_spec)    
+        depth_specs[depth] = depth_spec
+    return depth_specs
         
-def print_hierarchical_affinity(sess, model):
+def get_hierarchical_affinity(sess, model):
     def get_cos_sim(parent_to_child_idxs):
         parent_child_bows = {parent_idx: np.concatenate([normed_tree_topic_bow[child_idx] for child_idx in child_idxs], 0) for parent_idx, child_idxs in parent_to_child_idxs.items()}
         cos_sim = np.mean([np.mean(normed_tree_topic_bow[parent_idx].dot(child_bows.T)) for parent_idx, child_bows in parent_child_bows.items()])
@@ -84,4 +87,4 @@ def print_hierarchical_affinity(sess, model):
     
     child_cos_sim = get_cos_sim(second_parent_to_child_idxs)
     unchild_cos_sim = get_cos_sim(second_parent_to_unchild_idxs)
-    print('child %.3f, not-child: %.3f' % (child_cos_sim, unchild_cos_sim))
+    return child_cos_sim, unchild_cos_sim

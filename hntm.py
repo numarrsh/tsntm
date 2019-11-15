@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 
+import copy
 import numpy as np
 import tensorflow as tf
 
@@ -10,15 +11,15 @@ from components import tf_log, sample_latents, compute_kl_loss, softmax_with_tem
 from tree import get_topic_idxs, get_child_to_parent_idxs, get_depth, get_ancestor_idxs, get_descendant_idxs
 
 class HierarchicalNeuralTopicModel():
-    def __init__(self, config, tree_idxs):
+    def __init__(self, config):
         self.config = config
         
         self.t_variables = {}
         
-        self.tree_idxs = tree_idxs
-        self.topic_idxs = get_topic_idxs(tree_idxs)
-        self.child_to_parent_idxs = get_child_to_parent_idxs(tree_idxs)
-        self.tree_depth = get_depth(tree_idxs)
+        self.tree_idxs = config.tree_idxs
+        self.topic_idxs = get_topic_idxs(self.tree_idxs)
+        self.child_to_parent_idxs = get_child_to_parent_idxs(self.tree_idxs)
+        self.tree_depth = get_depth(self.tree_idxs)
         self.n_depth = max(self.tree_depth.values())
         
         self.build()
@@ -68,6 +69,8 @@ class HierarchicalNeuralTopicModel():
            
         # -------------- Build Model --------------
         tf.reset_default_graph()
+        
+        tf.set_random_seed(self.config.seed)
         
         self.t_variables['bow'] = tf.placeholder(tf.float32, [None, self.config.dim_bow])
         self.t_variables['keep_prob'] = tf.placeholder(tf.float32)
@@ -128,7 +131,6 @@ class HierarchicalNeuralTopicModel():
         # monitor
         self.n_bow = tf.reduce_sum(self.t_variables['bow'], 1)
         self.topic_ppls = tf.divide(self.topic_losses_recon, tf.maximum(1e-5, self.n_bow))
-        self.topics_freq_bow_indices = tf.nn.top_k(self.topic_bow, 10, name='topic_freq_bow').indices
     
         # growth criteria
         self.n_topics = tf.multiply(tf.expand_dims(self.n_bow, -1), self.prob_topic)
@@ -144,3 +146,55 @@ class HierarchicalNeuralTopicModel():
                     self.t_variables['keep_prob']: keep_prob
         }
         return  feed_dict
+    
+    def update_tree(self, topic_prob_topic, recur_prob_topic):
+        assert len(self.topic_idxs) == len(recur_prob_topic) == len(topic_prob_topic)
+        update_tree_flg = False
+
+        def add_topic(topic_idx, tree_idxs):
+            if topic_idx in tree_idxs:
+                child_idx = min([10*topic_idx+i for i in range(1, 10) if 10*topic_idx+i not in tree_idxs[topic_idx]])
+                tree_idxs[topic_idx].append(child_idx)        
+            else:
+                child_idx = 10*topic_idx+1
+                tree_idxs[topic_idx] = [10*topic_idx+1]
+            return tree_idxs, child_idx
+
+        added_tree_idxs = copy.deepcopy(self.tree_idxs)
+        for parent_idx, child_idxs in self.tree_idxs.items():
+            prob_topic = topic_prob_topic[parent_idx]
+            if prob_topic > self.config.add_threshold:
+                update_tree_flg = True
+                for depth in range(self.tree_depth[parent_idx], self.n_depth):
+                    added_tree_idxs, parent_idx = add_topic(parent_idx, added_tree_idxs)
+
+        def remove_topic(parent_idx, child_idx, tree_idxs):
+            if parent_idx in tree_idxs:
+                tree_idxs[parent_idx].remove(child_idx)
+                if child_idx in tree_idxs:
+                    tree_idxs.pop(child_idx)    
+            return tree_idxs
+
+        removed_tree_idxs = copy.deepcopy(added_tree_idxs)
+        for parent_idx, child_idxs in self.tree_idxs.items():
+            probs_child = np.array([recur_prob_topic[child_idx] for child_idx in child_idxs])
+            if self.config.remove_min:
+                prob_child = np.min(probs_child)
+                child_idx = child_idxs[np.argmin(probs_child)]
+                if prob_child < self.config.remove_threshold:
+                    update_tree_flg = True
+                    removed_tree_idxs = remove_topic(parent_idx, child_idx, removed_tree_idxs)
+                    if parent_idx in removed_tree_idxs:
+                        if len(removed_tree_idxs[parent_idx]) == 0:
+                            ancestor_idx = self.child_to_parent_idxs[parent_idx]
+                            removed_tree_idxs = remove_topic(ancestor_idx, parent_idx, removed_tree_idxs)
+            else:
+                for prob_child, child_idx in zip(probs_child, child_idxs):
+                    if prob_child < self.config.remove_threshold:
+                        update_tree_flg = True
+                        removed_tree_idxs = remove_topic(parent_idx, child_idx, removed_tree_idxs)
+                        if parent_idx in removed_tree_idxs:
+                            if len(removed_tree_idxs[parent_idx]) == 0:
+                                ancestor_idx = self.child_to_parent_idxs[parent_idx]
+                                removed_tree_idxs = remove_topic(ancestor_idx, parent_idx, removed_tree_idxs)
+        return removed_tree_idxs, update_tree_flg    
