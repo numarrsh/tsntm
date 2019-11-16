@@ -7,6 +7,10 @@ from collections import defaultdict, Counter
 import numpy as np
 from scipy.special import gammaln
 
+import warnings
+
+warnings.filterwarnings('error')
+
 class Topic:
     def __init__(self, idx, sibling_idx, parent, depth, config):
         self.idx = idx
@@ -20,10 +24,7 @@ class Topic:
         self.set_prob_words()
     
     def sample_child(self, doc, train=True):
-        s_child_prior = self.get_s_child_prior()
-        s_child_likelihood = self.get_s_child_likelihood(doc)
-        p_child = np.array(s_child_prior * s_child_likelihood) / np.sum(s_child_prior * s_child_likelihood)
-        
+        p_child = self.get_probs_child(doc)
         child_index = np.random.multinomial(1, p_child).argmax()
         if self.config.verbose: print('Depth: ', self.depth, 'p_child: ', p_child, 'selected:', child_index)
         
@@ -35,8 +36,9 @@ class Topic:
         return child
     
     def init_sample_child(self, train=True):
-        s_child_prior = self.get_s_child_prior()
-        p_child = np.array(s_child_prior) / np.sum(s_child_prior)
+        logits_child_prior = self.get_logits_child_prior()
+        s_child = np.exp(logits_child_prior)
+        p_child = s_child/np.sum(s_child)
         
         child_index = np.random.multinomial(1, p_child).argmax()
         if self.config.verbose: print('Depth: ', self.depth, 'p_child: ', p_child, 'selected:', child_index)
@@ -49,17 +51,31 @@ class Topic:
         return child
     
     def get_probs_child(self, doc):
-        s_child_prior = self.get_s_child_prior()
-        s_child_likelihood = self.get_s_child_likelihood(doc)
-        p_child = np.array(s_child_prior * s_child_likelihood) / np.sum(s_child_prior * s_child_likelihood)
+        logits_child_prior = self.get_logits_child_prior()
+        logits_child_likelihood = self.get_logits_child_likelihood(doc)
+        logits_child = logits_child_prior + logits_child_likelihood
+
+        logits_child -= np.max(logits_child)
+        s_child = np.exp(logits_child)
+
+#         p_child = s_child/np.sum(s_child)
+
+        if np.sum(s_child) > 0:
+            p_child = s_child/np.sum(s_child)
+            p_child = p_child.astype(np.float64)
+        else:
+            p_child = np.zeros_like(logits_child, dtype=np.float64)
+            p_child[np.argmax(s_child)] = 1.
+            
         return p_child
     
-    def get_s_child_prior(self):
+    def get_logits_child_prior(self):
         s_child_prior = [child.cnt_doc for child in self.children]
         s_child_prior += [self.config.gam]
-        return s_child_prior
+        logits_child_prior = np.log(s_child_prior)
+        return logits_child_prior
     
-    def get_s_child_likelihood(self, doc):
+    def get_logits_child_likelihood(self, doc):
         if len(self.children) > 0:
             children_cnt_words = np.concatenate([np.array([child.cnt_words for child in self.children]), np.zeros([1, self.config.n_vocab])], 0) # (Children+1) x Vocabulary
         else:
@@ -67,12 +83,11 @@ class Topic:
         
         cnt_words_doc = doc.cnt_words[None, :] # 1 x Vocabulary
 
-        logits_likelihood = gammaln(np.sum(children_cnt_words, -1) + self.config.n_vocab*self.config.eta) \
+        logits_child_likelihood = gammaln(np.sum(children_cnt_words, -1) + self.config.n_vocab*self.config.eta) \
                             - np.sum(gammaln(children_cnt_words + self.config.eta), -1) \
                             - gammaln(np.sum(children_cnt_words + cnt_words_doc, -1) + self.config.n_vocab*self.config.eta) \
                             + np.sum(gammaln(children_cnt_words + cnt_words_doc + self.config.eta), -1)
-        s_child_likelihood = np.exp(logits_likelihood)
-        return s_child_likelihood
+        return logits_child_likelihood
     
     def get_new_child(self):
         sibling_idx = max([child.sibling_idx for child in self.children]) + 1 if len(self.children) > 0 else 1
@@ -323,14 +338,14 @@ def get_freq_tokens_ncrp(topic, idx_to_word, bow_idxs, topic_freq_words={}):
         topic_freq_words = get_freq_tokens_ncrp(topic, idx_to_word, bow_idxs, topic_freq_words)
     return topic_freq_words
 
-def assert_sum_cnt_words(topic_root, docs):
-    def recur_cnt_words(topic):
-        cnt_words = np.sum(topic.cnt_words)
-        for child in topic.children:
-            cnt_words += recur_cnt_words(child)
-        return cnt_words
+def get_sum_cnt_words(topic):
+    cnt_words = np.sum(topic.cnt_words)
+    for child in topic.children:
+        cnt_words += get_sum_cnt_words(child)
+    return cnt_words
 
-    sum_cnt_words = recur_cnt_words(topic_root)
+def assert_sum_cnt_words(topic_root, docs):
+    sum_cnt_words = get_sum_cnt_words(topic_root)
     assert sum_cnt_words == sum([len(doc.words) for doc in docs])
     
 def nearly_equal(val, thre):

@@ -6,17 +6,15 @@ from collections import defaultdict
 def validate(sess, batches, model):
     losses = []
     ppl_list = []
-    rads_bow_list = []
     prob_topic_list = []
     n_bow_list = []
     n_topics_list = []
     for ct, batch in batches:
         feed_dict = model.get_feed_dict(batch, mode='test')
-        loss_batch, topic_loss_recon_batch, topic_loss_kl_batch, topic_loss_reg_batch, ppls_batch, rads_bow_batch, prob_topic_batch, n_bow_batch, n_topics_batch \
-            = sess.run([model.loss, model.topic_loss_recon, model.topic_loss_kl, model.topic_loss_reg, model.topic_ppls, model.rads_bow, model.prob_topic, model.n_bow, model.n_topics], feed_dict = feed_dict)
+        loss_batch, topic_loss_recon_batch, topic_loss_kl_batch, topic_loss_reg_batch, ppls_batch, prob_topic_batch, n_bow_batch, n_topics_batch \
+            = sess.run([model.loss, model.topic_loss_recon, model.topic_loss_kl, model.topic_loss_reg, model.topic_ppls, model.prob_topic, model.n_bow, model.n_topics], feed_dict = feed_dict)
         losses += [[loss_batch, topic_loss_recon_batch, topic_loss_kl_batch, topic_loss_reg_batch]]
         ppl_list += list(ppls_batch)
-        rads_bow_list.append(rads_bow_batch)
         prob_topic_list.append(prob_topic_batch)
         n_bow_list.append(n_bow_batch)
         n_topics_list.append(n_topics_batch)
@@ -29,10 +27,7 @@ def validate(sess, batches, model):
     n_topics = np.concatenate(n_topics_list, 0)
     probs_topic_mean = np.sum(n_topics, 0) / np.sum(n_bow)
     
-    rads_bow = np.concatenate(rads_bow_list, 0)
-    rads_bow_mean = np.cos(np.sum(rads_bow, 0) / np.sum(n_topics, 0))
-    
-    return loss_mean, topic_loss_recon_mean, topic_loss_kl_mean, topic_loss_reg_mean, ppl_mean, rads_bow_mean, probs_topic_mean
+    return loss_mean, topic_loss_recon_mean, topic_loss_kl_mean, topic_loss_reg_mean, ppl_mean, probs_topic_mean
 
 def print_topic_sample(sess, model, topic_prob_topic=None, recur_prob_topic=None, topic_freq_tokens=None, parent_idx=0, depth=0):
     if depth == 0: # print root
@@ -52,6 +47,10 @@ def print_topic_sample(sess, model, topic_prob_topic=None, recur_prob_topic=None
         
         if child_idx in model.tree_idxs: 
             print_topic_sample(sess, model, topic_prob_topic=topic_prob_topic, recur_prob_topic=recur_prob_topic, topic_freq_tokens=topic_freq_tokens, parent_idx=child_idx, depth=depth)
+
+def print_flat_topic_sample(sess, model, topics_freq_tokens):
+    for topic_idx, topic_freq_tokens in enumerate(topics_freq_tokens):
+        print(topic_idx, ' '.join(topic_freq_tokens))
             
 def get_topic_specialization(sess, model, instances):
     topics_bow = sess.run(model.topic_bow)
