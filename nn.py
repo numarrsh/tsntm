@@ -82,7 +82,7 @@ class RNNCell:
         zero_state = tf.zeros([1, self.dim_hidden], dtype=tf.float32, name=name)
         return zero_state
     
-def rnn(dim_hidden, max_depth, initial_state=None, output_layer=None, name=''):
+def rnn(dim_hidden, max_depth, initial_state=None, output_layer=None, name='', concat=True):
     outputs, states_hidden = [], []
     
     with tf.variable_scope(name, reuse=False):
@@ -100,8 +100,8 @@ def rnn(dim_hidden, max_depth, initial_state=None, output_layer=None, name=''):
                 output, state_hidden = rnn_cell(state_hidden, reuse=True)
             outputs.append(output)
             states_hidden.append(state_hidden)
-
-    outputs = tf.concat(outputs, 1)
+    
+    outputs = tf.concat(outputs, 1) if concat else tf.concat(outputs, 0)
     states_hidden = tf.concat(states_hidden, 0)
     return outputs, states_hidden    
 

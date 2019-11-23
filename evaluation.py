@@ -52,7 +52,7 @@ def print_flat_topic_sample(sess, model, topics_freq_tokens):
     for topic_idx, topic_freq_tokens in enumerate(topics_freq_tokens):
         print(topic_idx, ' '.join(topic_freq_tokens))
             
-def get_topic_specialization(sess, model, instances):
+def get_topic_specialization(sess, model, instances, verbose=False):
     topics_bow = sess.run(model.topic_bow)
     norm_bow = np.sum([instance.bow for instance in instances], 0)
     topics_vec = topics_bow / np.linalg.norm(topics_bow, axis=1, keepdims=True)
@@ -65,13 +65,16 @@ def get_topic_specialization(sess, model, instances):
         depth_topic_idxs[depth].append(topic_idx)
 
     depth_specs = {}
+    print('Topic Specialization:', end=' ')
     for depth, topic_idxs in depth_topic_idxs.items():
         topic_indices = np.array([model.topic_idxs.index(topic_idx) for topic_idx in topic_idxs])
         depth_spec = np.mean(topics_spec[topic_indices])
         depth_specs[depth] = depth_spec
+        print('depth %i: %.2f' % (depth, depth_spec), end=' ')
+    print('')
     return depth_specs
         
-def get_hierarchical_affinity(sess, model):
+def get_hierarchical_affinity(sess, model, verbose=False):
     def get_cos_sim(parent_to_child_idxs):
         parent_child_bows = {parent_idx: np.concatenate([normed_tree_topic_bow[child_idx] for child_idx in child_idxs], 0) for parent_idx, child_idxs in parent_to_child_idxs.items()}
         cos_sim = np.mean([np.mean(normed_tree_topic_bow[parent_idx].dot(child_bows.T)) for parent_idx, child_bows in parent_child_bows.items()])
@@ -86,4 +89,5 @@ def get_hierarchical_affinity(sess, model):
     
     child_cos_sim = get_cos_sim(second_parent_to_child_idxs)
     unchild_cos_sim = get_cos_sim(second_parent_to_unchild_idxs)
+    if verbose: print('Hierarchical Affinity: child %.2f, non-child %.2f'%(child_cos_sim, unchild_cos_sim))
     return child_cos_sim, unchild_cos_sim

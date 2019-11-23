@@ -4,6 +4,7 @@ import tensorflow as tf
 
 def tf_log(x):
     return tf.log(tf.clip_by_value(x, 1e-10, x))
+
         
 def sample_latents(means, logvars):
     # reparameterize

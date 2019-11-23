@@ -356,6 +356,5 @@ def compute_coherence(topic_words_list, dir_corpus, topns=[10], metric='npmi'):
     #print the overall topic coherence for all topics
     print("==========================================================================")
     print("Average Topic Coherence = %.3f" % np.mean(mean_coherence_list))
-    print("Median Topic Coherence = %.3f" % np.median(mean_coherence_list))
     
     return np.mean(mean_coherence_list)

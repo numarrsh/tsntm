@@ -7,10 +7,6 @@ from collections import defaultdict, Counter
 import numpy as np
 from scipy.special import gammaln
 
-# import warnings
-
-# warnings.filterwarnings('error')
-
 class Topic:
     def __init__(self, idx, sibling_idx, parent, depth, config):
         self.idx = idx
@@ -57,6 +53,8 @@ class Topic:
 
         logits_child -= np.max(logits_child)
         s_child = np.exp(logits_child)
+
+#         p_child = s_child/np.sum(s_child)
 
         if np.sum(s_child) > 0:
             p_child = s_child/np.sum(s_child)
@@ -209,7 +207,7 @@ def sample_word_topics(docs, train=True):
             
             # decrement count of words
             doc.depth_cnt_words[old_depth, word_idx] -= 1
-            if train: old_topic.cnt_words[word_idx] -= 1
+            if train: old_topic.cnt_words[word_idx] -= 1            
             
             # sample depth of word
             new_depth = doc.sample_depth(word_idx)
@@ -253,18 +251,21 @@ def get_perplexity(docs, topic_root, verbose=False):
         for word_index, word_idx in enumerate(doc.words):
             probs_depth = doc.get_probs_depth(word_idx)
             probs_depths.append(probs_depth)
-
+            
         assert nearly_equal(np.sum(probs_depths), len(doc.words))
     
         # Likelihood of Doc
         assert len(probs_depths) == len(doc.words)
         logit_doc = 0
         for prob_depths, word_idx in zip(probs_depths, doc.words):
+#             prob_topics, prob_word_topics = [], []
             prob_word = 0
             for prob_paths, prob_depth in zip(probs_paths, prob_depths):
                 for topic, prob_path in prob_paths.items():
                     prob_topic = prob_path * prob_depth # scalar
                     prob_word_topic = topic.prob_words[word_idx] # scalar
+#                     prob_topics.append(prob_topic)
+#                     prob_word_topics.append(prob_word_topic)
                     prob_word += prob_topic * prob_word_topic
             logit_word = np.log(prob_word)
             logit_doc += logit_word
