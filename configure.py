@@ -65,6 +65,9 @@ def get_config(nb_name):
     config.path_checkpoint = os.path.join(config.dir_model, 'checkpoint')
     
     # for ncrp
-    config.alp = np.array(config.alp)
+    if config.model == 'ncrp':
+        config.alp = np.array(config.alp)
+    elif config.model == 'rcrp':
+        config.alp = config.alp[0]
     
     return config

@@ -230,13 +230,13 @@ def get_perplexity(docs, topic_root, verbose=False):
             
     # set Probabilty of Words
     set_prob_words(topic_root)
-    
-    logit_docs, n_words = 0, 0
+
+    logit_docs = []
     for doc in docs:
         # Path Probability for each document
         topic = topic_root
         probs_paths= [{topic: 1.}]
-        for depth in range(1, doc.config.n_depth):
+        for depth in range(1, topic_root.config.n_depth):
             probs_path = {}
             for topic, prob_path in probs_paths[-1].items():
                 topics_child = topic.get_children()
@@ -245,36 +245,27 @@ def get_perplexity(docs, topic_root, verbose=False):
                 for topic_child, prob_path_child in zip(topics_child, probs_path_child):
                     probs_path[topic_child] = prob_path_child
             probs_paths.append(probs_path)    
-            
-        assert nearly_equal(np.sum([sum(probs_path.values()) for probs_path in probs_paths]), doc.config.n_depth)        
 
-        # Depth Probability for Each Word
-        probs_depths = []
-        for word_index, word_idx in enumerate(doc.words):
-            probs_depth = doc.get_probs_depth(word_idx)
-            probs_depths.append(probs_depth)
+        all_topics = []
+        for probs_path in probs_paths:
+            all_topics += list(probs_path.keys())
 
-        assert nearly_equal(np.sum(probs_depths), len(doc.words))
-    
-        # Likelihood of Doc
-        assert len(probs_depths) == len(doc.words)
-        logit_doc = 0
-        for prob_depths, word_idx in zip(probs_depths, doc.words):
-            prob_word = 0
-            for prob_paths, prob_depth in zip(probs_paths, prob_depths):
-                for topic, prob_path in prob_paths.items():
-                    prob_topic = prob_path * prob_depth # scalar
-                    prob_word_topic = topic.prob_words[word_idx] # scalar
-                    prob_word += prob_topic * prob_word_topic
-            logit_word = np.log(prob_word)
-            logit_doc += logit_word
-        logit_docs += logit_doc
-        n_words += len(doc.words)
-#         assert nearly_equal(sum(prob_topics), 1.)
-        
-    perplexity = np.exp(-logit_docs/n_words)
+        # topic probability for each depth
+        probs_depths_topics = np.array([[probs_path[topic] if topic in probs_path else 0. for topic in all_topics] for probs_path in probs_paths])
+        # depth probability for each word
+        probs_words_depths = np.array([doc.get_probs_depth(word_idx) for word_idx in doc.words])
+        # topic probability for each depth
+        probs_words_topics = probs_words_depths.dot(probs_depths_topics) # n_doc x n_topic
+
+        probs_topics_words = np.array([topic.prob_words for topic in all_topics]) # n_topic x n_vocab
+        probs_words_bow = probs_words_topics.dot(probs_topics_words) # n_doc x n_vocab
+        logit_words = np.log(probs_words_bow[np.arange(len(doc.words)), doc.words])
+        logit_doc = np.mean(logit_words)
+        logit_docs.append(logit_doc)
+
+    perplexity = np.exp(-np.mean(logit_docs))
     if verbose: print('Perplexity= %.1f' % perplexity)
-    return perplexity    
+    return perplexity
 
 def get_topic_specialization(docs, topic_root, verbose=False):
     norm_bow = np.sum([doc.cnt_words for doc in docs], 0)

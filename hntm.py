@@ -172,7 +172,7 @@ class HierarchicalNeuralTopicModel():
             if parent_idx in tree_idxs:
                 tree_idxs[parent_idx].remove(child_idx)
                 if child_idx in tree_idxs:
-                    tree_idxs.pop(child_idx)    
+                    tree_idxs.pop(child_idx)
             return tree_idxs
 
         removed_tree_idxs = copy.deepcopy(added_tree_idxs)

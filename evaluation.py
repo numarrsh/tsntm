@@ -87,7 +87,12 @@ def get_hierarchical_affinity(sess, model, verbose=False):
     second_parent_to_child_idxs = {parent_idx:child_idxs for parent_idx, child_idxs in model.tree_idxs.items() if model.tree_depth[parent_idx] == 2}
     second_parent_to_unchild_idxs = {parent_idx: [child_idx for child_idx in third_child_idxs if child_idx not in child_idxs] for parent_idx, child_idxs in second_parent_to_child_idxs.items()}
     
-    child_cos_sim = get_cos_sim(second_parent_to_child_idxs)
-    unchild_cos_sim = get_cos_sim(second_parent_to_unchild_idxs)
+    if sum(len(unchilds) for unchilds in second_parent_to_unchild_idxs.values()) > 0:
+        child_cos_sim = get_cos_sim(second_parent_to_child_idxs)
+        unchild_cos_sim = get_cos_sim(second_parent_to_unchild_idxs)
+    else:
+        child_cos_sim = get_cos_sim(second_parent_to_child_idxs)
+        unchild_cos_sim = 0
+    
     if verbose: print('Hierarchical Affinity: child %.2f, non-child %.2f'%(child_cos_sim, unchild_cos_sim))
     return child_cos_sim, unchild_cos_sim
