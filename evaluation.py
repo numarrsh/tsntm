@@ -1,6 +1,7 @@
 #coding:utf-8
 
 import numpy as np
+import tensorflow as tf
 from collections import defaultdict
 
 def validate(sess, batches, model):
@@ -53,9 +54,13 @@ def print_flat_topic_sample(sess, model, topics_freq_tokens):
         print(topic_idx, ' '.join(topic_freq_tokens))
             
 def get_topic_specialization(sess, model, instances, verbose=False):
-    topics_bow = sess.run(model.topic_bow)
+    if not model.config.prod:
+        topics_vec = sess.run(tf.nn.l2_normalize(model.topic_bow, 1))
+    else:
+        topics_vec = sess.run(tf.nn.l2_normalize(tf.nn.softmax(model.topic_bow, 1), 1))
+#     topics_vec = topics_bow / np.linalg.norm(topics_bow, axis=1, keepdims=True)
+    
     norm_bow = np.sum([instance.bow for instance in instances], 0)
-    topics_vec = topics_bow / np.linalg.norm(topics_bow, axis=1, keepdims=True)
     norm_vec = norm_bow / np.linalg.norm(norm_bow)
 
     topics_spec = 1 - topics_vec.dot(norm_vec)
@@ -73,15 +78,18 @@ def get_topic_specialization(sess, model, instances, verbose=False):
         print('depth %i: %.2f' % (depth, depth_spec), end=' ')
     print('')
     return depth_specs
-        
+
 def get_hierarchical_affinity(sess, model, verbose=False):
     def get_cos_sim(parent_to_child_idxs):
         parent_child_bows = {parent_idx: np.concatenate([normed_tree_topic_bow[child_idx] for child_idx in child_idxs], 0) for parent_idx, child_idxs in parent_to_child_idxs.items()}
         cos_sim = np.mean([np.mean(normed_tree_topic_bow[parent_idx].dot(child_bows.T)) for parent_idx, child_bows in parent_child_bows.items()])
         return cos_sim    
     
-    tree_topic_bow = sess.run(model.tree_topic_bow)
-    normed_tree_topic_bow = {topic_idx: topic_bow/np.linalg.norm(topic_bow) for topic_idx, topic_bow in tree_topic_bow.items()}
+    if not model.config.prod:
+        tree_topic_bow = {topic_idx: tf.nn.l2_normalize(topic_bow) for topic_idx, topic_bow in model.tree_topic_bow.items()}
+    else:
+        tree_topic_bow = {topic_idx: tf.nn.l2_normalize(tf.nn.softmax(topic_bow)) for topic_idx, topic_bow in model.tree_topic_bow.items()}
+    normed_tree_topic_bow = sess.run(tree_topic_bow)
 
     third_child_idxs = [child_idx for child_idx, depth in model.tree_depth.items() if depth==3]
     second_parent_to_child_idxs = {parent_idx:child_idxs for parent_idx, child_idxs in model.tree_idxs.items() if model.tree_depth[parent_idx] == 2}

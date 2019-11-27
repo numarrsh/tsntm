@@ -10,7 +10,7 @@ from nn import doubly_rnn, rnn, tsbp, sbp
 from components import tf_log, sample_latents, compute_kl_loss, softmax_with_temperature
 from tree import get_topic_idxs, get_child_to_parent_idxs, get_depth, get_ancestor_idxs, get_descendant_idxs
 
-class HierarchicalNeuralTopicModel():
+class HierarchicalNeuralProdTopicModel():
     def __init__(self, config):
         self.config = config
         
@@ -36,18 +36,18 @@ class HierarchicalNeuralTopicModel():
             prob_topic = tf.concat([tree_prob_topic[topic_idx] for topic_idx in self.topic_idxs], -1)
             return prob_topic        
         
-        def get_tree_topic_bow(tree_topic_embeddings):
-            tree_topic_bow = {}
-            for topic_idx, depth in self.tree_depth.items():
-                topic_embedding = tree_topic_embeddings[topic_idx]
-                temperature = tf.constant(self.config.depth_temperature ** (1./depth), dtype=tf.float32)
-                logits = tf.matmul(topic_embedding, self.bow_embeddings, transpose_b=True)
-                if not self.config.prod:
-                    tree_topic_bow[topic_idx] = softmax_with_temperature(logits, axis=-1, temperature=temperature)
-                else:
-                    tree_topic_bow[topic_idx] = logits
+#         def get_tree_topic_bow(tree_topic_embeddings):
+#             tree_topic_bow = {}
+#             for topic_idx, depth in self.tree_depth.items():
+#                 topic_embedding = tree_topic_embeddings[topic_idx]
+#                 temperature = tf.constant(self.config.depth_temperature ** (1./depth), dtype=tf.float32)
+#                 logits = tf.matmul(topic_embedding, self.bow_embeddings, transpose_b=True)
+#                 if not self.config.prod:
+#                     tree_topic_bow[topic_idx] = softmax_with_temperature(logits, axis=-1, temperature=temperature)
+#                 else:
+#                     tree_topic_bow[topic_idx] = logits
                 
-            return tree_topic_bow
+#             return tree_topic_bow
         
         def get_topic_loss_reg(tree_topic_embeddings):
             def get_tree_mask_reg(all_child_idxs):        
@@ -87,10 +87,6 @@ class HierarchicalNeuralTopicModel():
             logvars_bow = tf.layers.Dense(units=self.config.dim_latent_bow, kernel_initializer=tf.constant_initializer(0), bias_initializer=tf.constant_initializer(0), name='logvar_bow')(hidden_bow)
             latents_bow = sample_latents(means_bow, logvars_bow) # sample latent vectors
             prob_layer = lambda h: tf.nn.sigmoid(tf.matmul(latents_bow, h, transpose_b=True))
-#             if not self.config.prod:
-#                 prob_layer = lambda h: tf.nn.sigmoid(tf.matmul(latents_bow, h, transpose_b=True))
-#             else:
-#                 prob_layer = lambda h: tf.matmul(latents_bow, h, transpose_b=True)
 
             tree_sticks_topic, tree_states_sticks_topic = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, name='sticks_topic')
             self.tree_prob_leaf = tsbp(tree_sticks_topic, self.tree_idxs)
@@ -100,15 +96,13 @@ class HierarchicalNeuralTopicModel():
 
             self.prob_topic = get_prob_topic(self.tree_prob_leaf, self.prob_depth)# n_batch x n_topic
 
-        # decode bow
-        with tf.variable_scope('shared', reuse=False):
-            self.bow_embeddings = tf.get_variable('emb', [self.config.dim_bow, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # embeddings of vocab
+#         # decode bow
+#         with tf.variable_scope('shared', reuse=False):
+#             self.bow_embeddings = tf.get_variable('emb', [self.config.dim_bow, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # embeddings of vocab
 
         with tf.variable_scope('topic/dec', reuse=False):
-            emb_layer = lambda h: tf.layers.Dense(units=self.config.dim_emb, name='output')(tf.nn.tanh(h))
-            self.tree_topic_embeddings, tree_states_topic_embeddings = doubly_rnn(self.config.dim_emb, self.tree_idxs, output_layer=emb_layer, name='emb_topic')
-
-            self.tree_topic_bow = get_tree_topic_bow(self.tree_topic_embeddings) # bow vectors for each topic
+            emb_layer = lambda h: tf.layers.Dense(units=self.config.dim_bow, name='output')(tf.nn.tanh(h))
+            self.tree_topic_bow, _ = doubly_rnn(self.config.dim_emb, self.tree_idxs, output_layer=emb_layer, name='emb_topic')
 
             self.topic_bow = tf.concat([self.tree_topic_bow[topic_idx] for topic_idx in self.topic_idxs], 0) # KxV
             if not self.config.prod:
@@ -122,8 +116,7 @@ class HierarchicalNeuralTopicModel():
 
         self.topic_loss_kl = compute_kl_loss(means_bow, logvars_bow) # KL divergence b/w latent dist & gaussian std
         
-        self.topic_embeddings = tf.concat([self.tree_topic_embeddings[topic_idx] for topic_idx in self.topic_idxs], 0) # temporary
-        self.topic_loss_reg = get_topic_loss_reg(self.tree_topic_embeddings)
+        self.topic_loss_reg = get_topic_loss_reg(self.tree_topic_bow)
 
         self.global_step = tf.Variable(0, name='global_step',trainable=False)
 
@@ -146,8 +139,8 @@ class HierarchicalNeuralTopicModel():
         # growth criteria
         self.n_topics = tf.multiply(tf.expand_dims(self.n_bow, -1), self.prob_topic)
         
-        self.arcs_bow = tf.acos(tf.matmul(tf.linalg.l2_normalize(self.bow_embeddings, axis=-1), tf.linalg.l2_normalize(self.topic_embeddings, axis=-1), transpose_b=True)) # n_vocab x n_topic
-        self.rads_bow = tf.multiply(tf.matmul(self.t_variables['bow'], self.arcs_bow), self.prob_topic) # n_batch x n_topic
+#         self.arcs_bow = tf.acos(tf.matmul(tf.linalg.l2_normalize(self.bow_embeddings, axis=-1), tf.linalg.l2_normalize(self.topic_embeddings, axis=-1), transpose_b=True)) # n_vocab x n_topic
+#         self.rads_bow = tf.multiply(tf.matmul(self.t_variables['bow'], self.arcs_bow), self.prob_topic) # n_batch x n_topic
     
     def get_feed_dict(self, batch, mode='train'):
         bow = np.array([instance.bow for instance in batch]).astype(np.float32)

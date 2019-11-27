@@ -42,6 +42,7 @@ def get_config(nb_name):
     parser.add_argument('-min', '--remove_min', action='store_true')
     parser.add_argument('-add', '--add_threshold', type=float, default=0.05)
     parser.add_argument('-rem', '--remove_threshold', type=float, default=0.05)
+    parser.add_argument('-prod', action='store_true')
     parser.add_argument('-static', action='store_true')
     
     parser.add_argument('-tmp', action='store_true')
