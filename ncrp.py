@@ -150,6 +150,10 @@ def sample(train_docs, dev_docs, test_docs, topic_root):
     sample_doc_topics(docs=test_docs, topic_root=topic_root, train=False)
     sample_word_topics(docs=test_docs, train=False)    
     assert_sum_cnt_words(topic_root, train_docs)
+
+def sample_each(docs, topic_root, train):
+    sample_doc_topics(docs=docs, topic_root=topic_root, train=train)
+    sample_word_topics(docs=docs, train=train)
     
 def init_doc_topics(docs, topic_root, train=True):
     for doc in docs:

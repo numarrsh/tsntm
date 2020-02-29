@@ -11,7 +11,7 @@ import pdb
 
 debug = False
 
-def compute_word_count(topic_words_list, ref_corpus_dir):
+def compute_word_count(topic_words_list, ref_corpus_dir, window_size = 20):
     def convert_to_index(wordlist, unigram_rev):
         ids = []
 
@@ -182,7 +182,7 @@ def compute_word_count(topic_words_list, ref_corpus_dir):
     
     
     #parameters
-    window_size = 20 #size of the sliding window; 0 = use document as window
+#     window_size = 20 #size of the sliding window; 0 = use document as window
     colloc_sep = "_" #symbol for concatenating collocations
     debug = False
 
@@ -296,8 +296,8 @@ def calc_topic_coherence(topic_words, metric, wordcount, window_total):
     return float(sum(topic_assoc))/len(topic_assoc)
 
 
-def compute_coherence(topic_words_list, dir_corpus, topns=[10], metric='npmi'):
-    word_count_lines = compute_word_count(topic_words_list, dir_corpus)
+def compute_coherence(topic_words_list, dir_corpus, topns=[10], metric='npmi', window_size = 20):
+    word_count_lines = compute_word_count(topic_words_list, dir_corpus, window_size = window_size)
     
     #constants
     WTOTALKEY = "!!<TOTAL_WINDOWS>!!" #key name for total number of windows (in word count file)

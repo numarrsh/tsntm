@@ -5,7 +5,6 @@ import tensorflow as tf
 def tf_log(x):
     return tf.log(tf.clip_by_value(x, 1e-10, x))
 
-        
 def sample_latents(means, logvars):
     # reparameterize
     noises = tf.random.normal(tf.shape(means))
@@ -17,8 +16,7 @@ def compute_kl_loss(means, logvars, means_prior=None, logvars_prior=None):
         kl_losses = tf.reduce_sum(-0.5 * (logvars - tf.square(means) - tf.exp(logvars) + 1.0), 1) # sum over latent dimentsion    
     elif means_prior is not None:
         kl_losses = tf.reduce_sum(-0.5 * (logvars - tf.square(means-means_prior) - tf.exp(logvars) + 1.0), 1) # sum over latent dimentsion    
-    kl_loss = tf.reduce_mean(kl_losses, [0]) #mean of kl_losses over batches        
-    return kl_loss
+    return kl_losses
 
 def softmax_with_temperature(logits, axis=None, name=None, temperature=1.):
     if axis is None:

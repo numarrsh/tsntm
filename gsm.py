@@ -54,7 +54,8 @@ class GaussianSoftmaxModel():
         # define losses
         self.topic_losses_recon = -tf.reduce_sum(tf.multiply(self.t_variables['bow'], self.logits_bow), 1)
         self.topic_loss_recon = tf.reduce_mean(self.topic_losses_recon) # negative log likelihood of each words
-        self.topic_loss_kl = compute_kl_loss(means_bow, logvars_bow) # KL divergence b/w latent dist & gaussian std
+        self.topic_losses_kl = compute_kl_loss(means_bow, logvars_bow) # KL divergence b/w latent dist & gaussian std
+        self.topic_loss_kl = tf.reduce_mean(self.topic_losses_kl, 0) #mean of kl_losses over batches        
         self.topic_loss_reg = get_topic_loss_reg(self.topic_embeddings)
         self.loss = self.topic_loss_recon + self.topic_loss_kl + self.config.reg * self.topic_loss_reg
 
@@ -71,7 +72,7 @@ class GaussianSoftmaxModel():
 
         # monitor
         self.n_bow = tf.reduce_sum(self.t_variables['bow'], 1)
-        self.topic_ppls = tf.divide(self.topic_losses_recon, tf.maximum(1e-5, self.n_bow))
+        self.topic_ppls = tf.divide(self.topic_losses_recon + self.topic_losses_kl, tf.maximum(1e-5, self.n_bow))
     
         # growth criteria
         self.n_topics = tf.multiply(tf.expand_dims(self.n_bow, -1), self.prob_topic)

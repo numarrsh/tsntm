@@ -32,19 +32,22 @@ class DoublyRNNCell:
     
     def get_zero_state(self, name):
         zero_state = tf.zeros([1, self.dim_hidden], dtype=tf.float32, name=name)
-        return zero_state
+        return zero_state    
     
-def doubly_rnn(dim_hidden, tree_idxs, initial_state_parent=None, initial_state_sibling=None, output_layer=None, name=''):
+def doubly_rnn(dim_hidden, tree_idxs, initial_state_parent=None, initial_state_sibling=None, output_layer=None, cell='rnn', name=''):
     outputs, states_parent = {}, {}
     
     with tf.variable_scope(name, reuse=False):
-        doubly_rnn_cell = DoublyRNNCell(dim_hidden, output_layer)
+        if cell=='rnn':
+            doubly_rnn_cell = DoublyRNNCell(dim_hidden, output_layer)
+        elif cell=='gru':
+            doubly_rnn_cell = DoublyGRUCell(dim_hidden, output_layer)
+        elif cell=='gru2':
+            doubly_rnn_cell = DoublyGRU2Cell(dim_hidden, output_layer)
 
         if initial_state_parent is None: 
             initial_state_parent = doubly_rnn_cell.get_initial_state('init_state_parent')
-#             initial_state_parent = doubly_rnn_cell.get_zero_state('init_state_parent')
         if initial_state_sibling is None: 
-#             initial_state_sibling = doubly_rnn_cell.get_initial_state('init_state_sibling')
             initial_state_sibling = doubly_rnn_cell.get_zero_state('init_state_sibling')
         output, state_sibling = doubly_rnn_cell(initial_state_parent, initial_state_sibling, reuse=False)
         outputs[0], states_parent[0] = output, state_sibling
@@ -56,7 +59,7 @@ def doubly_rnn(dim_hidden, tree_idxs, initial_state_parent=None, initial_state_s
                 output, state_sibling = doubly_rnn_cell(state_parent, state_sibling)
                 outputs[child_idx], states_parent[child_idx] = output, state_sibling
 
-    return outputs, states_parent
+    return outputs, states_parent    
 
 class RNNCell:
     def __init__(self, dim_hidden, output_layer=None):
@@ -82,16 +85,57 @@ class RNNCell:
         zero_state = tf.zeros([1, self.dim_hidden], dtype=tf.float32, name=name)
         return zero_state
     
-def rnn(dim_hidden, max_depth, initial_state=None, output_layer=None, name='', concat=True):
+class GRUCell:
+    def __init__(self, dim_hidden, output_layer=None):
+        self.dim_hidden = dim_hidden
+        
+#         self.hidden_layer = tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='hidden')
+        self.reset_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='reset')
+        self.tmp_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='tmp')
+        self.update_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='update')        
+        
+        self.output_layer=output_layer
+        
+    def __call__(self, state_hidden, reuse=True):
+        with tf.variable_scope('output', reuse=reuse):
+#             state_hidden = self.hidden_layer(state)
+
+            gate_reset = self.reset_layer(state_hidden)
+            gate_update = self.update_layer(state_hidden)
+            
+            state_reset = tf.multiply(gate_reset, state_hidden)
+            state_tmp = self.tmp_layer(state_reset)
+            state_update = tf.multiply(gate_update, state_hidden) + tf.multiply((tf.constant(1., dtype=tf.float32)-gate_update), state_tmp)
+            
+            if self.output_layer is not None: 
+                output = self.output_layer(state_update)
+            else:
+                output = state_update
+            
+        return output, state_update
+    
+    def get_initial_state(self, name):
+        initial_state = tf.get_variable(name, [1, self.dim_hidden], dtype=tf.float32)
+        return initial_state
+    
+    def get_zero_state(self, name):
+        zero_state = tf.zeros([1, self.dim_hidden], dtype=tf.float32, name=name)
+        return zero_state    
+    
+def rnn(dim_hidden, max_depth, initial_state=None, output_layer=None, cell='rnn', name='', concat=True):
     outputs, states_hidden = [], []
     
     with tf.variable_scope(name, reuse=False):
-        rnn_cell = RNNCell(dim_hidden, output_layer)
+        if cell=='rnn':
+            rnn_cell = RNNCell(dim_hidden, output_layer)
+        elif cell=='gru' or cell=='gru2':
+            rnn_cell = GRUCell(dim_hidden, output_layer)
 
         if initial_state is not None: 
             state_hidden = initial_state
         else:
             state_hidden = rnn_cell.get_initial_state('init_state')
+#             state_hidden = rnn_cell.get_zero_state('init_state_parent')
         
         for depth in range(max_depth):
             if depth == 0:                
@@ -100,10 +144,10 @@ def rnn(dim_hidden, max_depth, initial_state=None, output_layer=None, name='', c
                 output, state_hidden = rnn_cell(state_hidden, reuse=True)
             outputs.append(output)
             states_hidden.append(state_hidden)
-    
+
     outputs = tf.concat(outputs, 1) if concat else tf.concat(outputs, 0)
     states_hidden = tf.concat(states_hidden, 0)
-    return outputs, states_hidden    
+    return outputs, states_hidden
 
 def tsbp(tree_sticks_topic, tree_idxs):
     tree_prob_topic = {}
@@ -142,3 +186,103 @@ def sbp(sticks_depth, max_depth):
 
     prob_depth = tf.concat(prob_depth_list, 1)
     return prob_depth
+
+# class DoublyGRUCell:
+#     def __init__(self, dim_hidden, output_layer=None):
+#         self.dim_hidden = dim_hidden
+        
+#         self.ancestral_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='ancestral')
+#         self.fraternal_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='fraternal')
+# #         self.hidden_layer = tf.layers.Dense(units=dim_hidden, name='hidden')
+        
+#         self.reset_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='reset')
+#         self.tmp_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='tmp')
+#         self.update_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='update')
+        
+#         self.output_layer=output_layer
+        
+#     def __call__(self, state_ancestral, state_fraternal, reuse=True):
+#         with tf.variable_scope('input', reuse=reuse):
+#             state_ancestral = self.ancestral_layer(state_ancestral)
+#             state_fraternal = self.fraternal_layer(state_fraternal)
+            
+#         with tf.variable_scope('output', reuse=reuse):
+#             state_hidden = state_ancestral + state_fraternal
+# #             state_hidden = self.hidden_layer(state_ancestral + state_fraternal)
+            
+#             gate_reset = self.reset_layer(state_hidden)
+#             gate_update = self.update_layer(state_hidden)
+            
+#             state_reset = tf.multiply(gate_reset, state_hidden)
+#             state_tmp = self.tmp_layer(state_reset)
+#             state_update = tf.multiply(gate_update, state_hidden) + tf.multiply((tf.constant(1., dtype=tf.float32)-gate_update), state_tmp)
+            
+#             if self.output_layer is not None: 
+#                 output = self.output_layer(state_update)
+#             else:
+#                 output = state_update
+            
+#         return output, state_update
+    
+#     def get_initial_state(self, name):
+#         initial_state = tf.get_variable(name, [1, self.dim_hidden], dtype=tf.float32)
+#         return initial_state
+    
+#     def get_zero_state(self, name):
+#         zero_state = tf.zeros([1, self.dim_hidden], dtype=tf.float32, name=name)
+#         return zero_state      
+    
+# class DoublyGRU2Cell:
+#     def __init__(self, dim_hidden, output_layer=None):
+#         self.dim_hidden = dim_hidden
+        
+#         self.ancestral_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='ancestral')
+#         self.fraternal_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='fraternal')
+        
+#         self.ancestral_reset_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='ancestral_reset')
+#         self.ancestral_tmp_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='ancestral_tmp')
+#         self.ancestral_update_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='ancestral_update')
+        
+#         self.fraternal_reset_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='fraternal_reset')
+#         self.fraternal_tmp_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='fraternal_tmp')
+#         self.fraternal_update_layer=tf.layers.Dense(units=dim_hidden, activation=tf.nn.tanh, name='fraternal_update')
+        
+#         self.hidden_layer = tf.layers.Dense(units=dim_hidden, name='hidden')        
+        
+#         self.output_layer=output_layer
+        
+#     def __call__(self, state_ancestral, state_fraternal, reuse=True):
+#         with tf.variable_scope('input', reuse=reuse):
+#             state_ancestral = self.ancestral_layer(state_ancestral)
+#             state_fraternal = self.fraternal_layer(state_fraternal)
+            
+#         with tf.variable_scope('output', reuse=reuse):
+#             gate_ancestral_reset = self.ancestral_reset_layer(state_ancestral)
+#             gate_ancestral_update = self.ancestral_update_layer(state_ancestral)
+        
+#             state_ancestral_reset = tf.multiply(gate_ancestral_reset, state_ancestral)
+#             state_ancestral_tmp = self.ancestral_tmp_layer(state_ancestral_reset)
+#             state_ancestral_update = tf.multiply(gate_ancestral_update, state_ancestral) + tf.multiply((tf.constant(1., dtype=tf.float32)-gate_ancestral_update), state_ancestral_tmp)
+            
+#             gate_fraternal_reset = self.fraternal_reset_layer(state_fraternal)
+#             gate_fraternal_update = self.fraternal_update_layer(state_fraternal)
+        
+#             state_fraternal_reset = tf.multiply(gate_fraternal_reset, state_fraternal)
+#             state_fraternal_tmp = self.fraternal_tmp_layer(state_fraternal_reset)
+#             state_fraternal_update = tf.multiply(gate_fraternal_update, state_fraternal) + tf.multiply((tf.constant(1., dtype=tf.float32)-gate_fraternal_update), state_fraternal_tmp)
+            
+#             state_hidden = self.hidden_layer(state_ancestral_update + state_fraternal_update)
+#             if self.output_layer is not None: 
+#                 output = self.output_layer(state_hidden)
+#             else:
+#                 output = state_hidden
+            
+#         return output, state_hidden
+    
+#     def get_initial_state(self, name):
+#         initial_state = tf.get_variable(name, [1, self.dim_hidden], dtype=tf.float32)
+#         return initial_state
+    
+#     def get_zero_state(self, name):
+#         zero_state = tf.zeros([1, self.dim_hidden], dtype=tf.float32, name=name)
+#         return zero_state      
