@@ -17,6 +17,7 @@ def get_config(nb_name):
     parser.add_argument('data')
     parser.add_argument('-m', '--model', default='hntm')
 
+    parser.add_argument('-large', action='store_true')
     parser.add_argument('-seed', type=int, default=0)
     parser.add_argument('-max_to_keep', type=int, default=10)
     
@@ -63,6 +64,7 @@ def get_config(nb_name):
     
     config.tree_idxs = get_tree_idxs(config.tree)
     config.path_data = os.path.join('data', config.data, 'instances.pkl')
+    if config.large: config.path_data = os.path.join('data', config.data, 'instances_large.pkl')
     config.dir_model = os.path.join('model', config.data, config.model, ''.join(args[1:]))
     config.dir_corpus = os.path.join('corpus', config.data) 
     config.path_model = os.path.join(config.dir_model, 'model') 
