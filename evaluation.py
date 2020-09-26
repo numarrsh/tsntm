@@ -48,6 +48,23 @@ def print_topic_sample(sess, model, topic_prob_topic=None, recur_prob_topic=None
         
         if child_idx in model.tree_idxs: 
             print_topic_sample(sess, model, topic_prob_topic=topic_prob_topic, recur_prob_topic=recur_prob_topic, topic_freq_tokens=topic_freq_tokens, parent_idx=child_idx, depth=depth)
+            
+def print_topic_year(sess, model, topic_freq_tokens=None, topic_year=None, parent_idx=0, depth=0):
+    if depth == 0: # print root
+        len(topic_freq_tokens) == len(topic_year)
+        freq_tokens = topic_freq_tokens[parent_idx]
+        year = topic_year[parent_idx]
+        print(parent_idx, 'Avg Year: %i' % year, ' '.join(freq_tokens))
+    
+    child_idxs = model.tree_idxs[parent_idx]
+    depth += 1
+    for child_idx in child_idxs:
+        freq_tokens = topic_freq_tokens[child_idx]
+        year = topic_year[child_idx]
+        print('  '*depth, child_idx, 'Avg Year: %i' % year, ' '.join(freq_tokens))
+        
+        if child_idx in model.tree_idxs: 
+            print_topic_year(sess, model, topic_freq_tokens=topic_freq_tokens, topic_year=topic_year, parent_idx=child_idx, depth=depth)            
 
 def print_flat_topic_sample(sess, model, topics_freq_tokens):
     for topic_idx, topic_freq_tokens in enumerate(topics_freq_tokens):

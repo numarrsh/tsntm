@@ -1,8 +1,4 @@
 #coding: utf-8
-
-from collections import defaultdict
-
-import copy
 import numpy as np
 import tensorflow as tf
 
@@ -45,7 +41,6 @@ class GaussianSoftmaxModel():
             self.bow_embeddings = tf.get_variable('emb', [self.config.dim_bow, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # embeddings of vocab
 
         with tf.variable_scope('topic/dec', reuse=False):
-            emb_layer = lambda h: tf.layers.Dense(units=self.config.dim_emb, name='output')(tf.nn.tanh(h))
             self.topic_embeddings = tf.get_variable('topic_emb', [self.config.n_topic, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # embeddings of topics
 
             self.topic_bow = tf.nn.softmax(tf.matmul(self.topic_embeddings, self.bow_embeddings, transpose_b=True), 1) # bow vectors for each topic

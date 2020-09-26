@@ -187,6 +187,35 @@ def sbp(sticks_depth, max_depth):
     prob_depth = tf.concat(prob_depth_list, 1)
     return prob_depth
 
+def nhdp(tree_sticks_path, tree_sticks_depth, tree_idxs):
+    tree_prob_path = {}
+    tree_rest_prob_depth = {}
+    tree_prob_topic = {}
+    # calculate topic probability and save
+    tree_prob_path[0] = 1.
+    tree_rest_prob_depth[0] = 1. - tree_sticks_depth[0]
+    tree_prob_topic[0] = tree_prob_path[0] * tree_sticks_depth[0]
+
+    for parent_idx, child_idxs in tree_idxs.items():
+        rest_prob_path = tree_prob_path[parent_idx]
+        for child_idx in child_idxs:
+            stick_path = tree_sticks_path[child_idx]
+            if child_idx == child_idxs[-1]:
+                prob_path = rest_prob_path * 1.
+            else:
+                prob_path = rest_prob_path * stick_path
+
+            tree_prob_path[child_idx] = prob_path
+            rest_prob_path -= prob_path
+            
+            if not child_idx in tree_idxs: # leaf childs
+                tree_prob_topic[child_idx] = tree_prob_path[child_idx] * tree_rest_prob_depth[parent_idx] * 1.
+            else:
+                tree_prob_topic[child_idx] = tree_prob_path[child_idx] * tree_rest_prob_depth[parent_idx] * tree_sticks_depth[child_idx]
+                tree_rest_prob_depth[child_idx] = tree_rest_prob_depth[parent_idx] * (1-tree_sticks_depth[child_idx])
+            
+    return tree_prob_topic
+
 # class DoublyGRUCell:
 #     def __init__(self, dim_hidden, output_layer=None):
 #         self.dim_hidden = dim_hidden

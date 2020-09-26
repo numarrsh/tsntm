@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 from nn import doubly_rnn, rnn, tsbp, sbp
-from components import tf_log, sample_latents, compute_kl_loss, softmax_with_temperature
+from components import tf_log, sample_latents, compute_kl_losses, softmax_with_temperature
 from tree import get_topic_idxs, get_child_to_parent_idxs, get_depth, get_ancestor_idxs, get_descendant_idxs
 
 class nestedHierarchicalNeuralTopicModel():
@@ -94,9 +94,9 @@ class nestedHierarchicalNeuralTopicModel():
 #             self.prob_depth = sbp(sticks_depth, self.n_depth)
 #             self.prob_topic = get_prob_topic(self.tree_prob_leaf, self.prob_depth)# n_batch x n_topic
 
-            tree_sticks_path, tree_states_sticks_path = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, cell=self.config.cell, name='sticks_topic')
+            tree_sticks_path, tree_states_sticks_path = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, cell=self.config.cell, name='sticks_path')
             tree_sticks_depth, tree_states_sticks_depth = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, cell=self.config.cell, name='sticks_depth')
-            self.tree_prob_topic = nhdp(tree_sticks_depth, tree_sticks_depth, self.tree_idxs)
+            self.tree_prob_topic = nhdp(tree_sticks_path, tree_sticks_depth, self.tree_idxs)
             self.prob_topic = tf.concat([self.tree_prob_topic[topic_idx] for topic_idx in self.topic_idxs], -1)# n_batch x n_topic
             
         # decode bow
@@ -119,7 +119,7 @@ class nestedHierarchicalNeuralTopicModel():
         self.topic_losses_recon = -tf.reduce_sum(tf.multiply(self.t_variables['bow'], self.logits_bow), 1)
         self.topic_loss_recon = tf.reduce_mean(self.topic_losses_recon) # negative log likelihood of each words
 
-        self.topic_losses_kl = compute_kl_loss(means_bow, logvars_bow) # KL divergence b/w latent dist & gaussian std
+        self.topic_losses_kl = compute_kl_losses(means_bow, logvars_bow) # KL divergence b/w latent dist & gaussian std
         self.topic_loss_kl = tf.reduce_mean(self.topic_losses_kl, 0) #mean of kl_losses over batches        
         
         self.topic_embeddings = tf.concat([self.tree_topic_embeddings[topic_idx] for topic_idx in self.topic_idxs], 0) # temporary

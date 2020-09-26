@@ -6,11 +6,11 @@ import copy
 import numpy as np
 import tensorflow as tf
 
-from nn import doubly_rnn, rnn, tsbp, sbp
+from nn import doubly_rnn, rnn, tsbp, sbp, nhdp
 from components import tf_log, sample_latents, compute_kl_losses, softmax_with_temperature
 from tree import get_topic_idxs, get_child_to_parent_idxs, get_depth, get_ancestor_idxs, get_descendant_idxs
 
-class HierarchicalNeuralTopicModel():
+class TreeStructuredGaussianNeuralTopicModel():
     def __init__(self, config):
         self.config = config
         if 'cell' not in vars(config): config.cell = 'rnn'
@@ -48,10 +48,10 @@ class HierarchicalNeuralTopicModel():
                 
             return tree_topic_bow
         
-        def get_topic_loss_reg(tree_topic_embeddings):
+        def get_topic_loss_reg(topic_bow):
             def get_tree_mask_reg(all_child_idxs):        
                 tree_mask_reg = np.zeros([len(all_child_idxs), len(all_child_idxs)], dtype=np.float32)
-                for parent_idx, child_idxs in self.tree_idxs.items():
+                for parent_idx, child_idxs in self.config.tree_idxs.items():
                     neighbor_idxs = child_idxs
                     for neighbor_idx1 in neighbor_idxs:
                         for neighbor_idx2 in neighbor_idxs:
@@ -61,9 +61,10 @@ class HierarchicalNeuralTopicModel():
                 return tree_mask_reg
             
             all_child_idxs = list(self.child_to_parent_idxs.keys())
-            self.diff_topic_embeddings = tf.concat([tree_topic_embeddings[child_idx] - tree_topic_embeddings[self.child_to_parent_idxs[child_idx]] for child_idx in all_child_idxs], axis=0)
-            diff_topic_embeddings_norm = self.diff_topic_embeddings / tf.norm(self.diff_topic_embeddings, axis=1, keepdims=True)
-            self.topic_dots = tf.clip_by_value(tf.matmul(diff_topic_embeddings_norm, tf.transpose(diff_topic_embeddings_norm)), -1., 1.)        
+
+            diff_topic_bow = tf.concat([tf.expand_dims(topic_bow[self.topic_idxs.index(child_idx)] - topic_bow[self.topic_idxs.index(self.child_to_parent_idxs[child_idx])], 0) for child_idx in all_child_idxs], axis=0)
+            diff_topic_bow_norm = diff_topic_bow / tf.norm(diff_topic_bow, axis=1, keepdims=True)
+            self.topic_dots = tf.clip_by_value(tf.matmul(diff_topic_bow_norm, tf.transpose(diff_topic_bow_norm)), -1., 1.)
 
             self.tree_mask_reg = get_tree_mask_reg(all_child_idxs)
             self.topic_losses_reg = tf.square(self.topic_dots - tf.eye(len(all_child_idxs))) * self.tree_mask_reg
@@ -87,40 +88,55 @@ class HierarchicalNeuralTopicModel():
             latents_bow = sample_latents(means_bow, logvars_bow) # sample latent vectors
             prob_layer = lambda h: tf.nn.sigmoid(tf.matmul(latents_bow, h, transpose_b=True))
 
-            tree_sticks_topic, tree_states_sticks_topic = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, cell=self.config.cell, name='sticks_topic')
-            self.tree_prob_leaf = tsbp(tree_sticks_topic, self.tree_idxs)
+            tree_sticks_path, tree_states_sticks_path = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, cell=self.config.cell, name='sticks_path')
+            tree_sticks_depth, tree_states_sticks_depth = doubly_rnn(self.config.dim_latent_bow, self.tree_idxs, output_layer=prob_layer, cell=self.config.cell, name='sticks_depth')
+            self.tree_prob_topic = nhdp(tree_sticks_path, tree_sticks_depth, self.tree_idxs)
+            self.prob_topic = tf.concat([self.tree_prob_topic[topic_idx] for topic_idx in self.topic_idxs], -1)# n_batch x n_topic
             
-            sticks_depth, _ = rnn(self.config.dim_latent_bow, self.n_depth, output_layer=prob_layer, cell=self.config.cell, name='prob_depth')
-            self.prob_depth = sbp(sticks_depth, self.n_depth)
-
-            self.prob_topic = get_prob_topic(self.tree_prob_leaf, self.prob_depth)# n_batch x n_topic
-
         # decode bow
         with tf.variable_scope('shared', reuse=False):
             self.bow_embeddings = tf.get_variable('emb', [self.config.dim_bow, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # embeddings of vocab
 
         with tf.variable_scope('topic/dec', reuse=False):
-            emb_layer = lambda h: tf.layers.Dense(units=self.config.dim_emb, name='output')(tf.nn.tanh(h))
-            self.tree_topic_embeddings, tree_states_topic_embeddings = doubly_rnn(self.config.dim_emb, self.tree_idxs, output_layer=emb_layer, cell=self.config.cell, name='emb_topic')
-
-            self.tree_topic_bow = get_tree_topic_bow(self.tree_topic_embeddings) # bow vectors for each topic
-
-            self.topic_bow = tf.concat([self.tree_topic_bow[topic_idx] for topic_idx in self.topic_idxs], 0) # KxV
+            self.tree_topic_hiddens, _ = doubly_rnn(self.config.dim_emb, self.config.tree_idxs, output_layer=None, cell=self.config.cell, name='emb_topic')
+            
+            self.topic_hiddens = tf.concat([self.tree_topic_hiddens[topic_idx] for topic_idx in self.topic_idxs], 0)
+            self.topic_means = tf.layers.Dense(units=self.config.dim_latent_topic, name='topic_means')(self.topic_hiddens)
+            self.topic_logvars_ = tf.layers.Dense(units=self.config.dim_latent_topic, kernel_initializer=tf.constant_initializer(0), bias_initializer=tf.constant_initializer(0), name='topic_logvars')(self.topic_hiddens)
+            self.topic_logvars = tf.maximum(tf.minimum(self.topic_logvars_, self.config.max_logvar), self.config.min_logvar)
+            self.topic_latents = sample_latents(self.topic_means, self.topic_logvars)
+            
+            self.topic_bow = tf.layers.Dense(units=self.config.dim_bow, name='topic_bow', activation=tf.nn.softmax)(self.topic_latents)
             self.logits_bow = tf_log(tf.matmul(self.prob_topic, self.topic_bow)) # predicted bow distribution N_Batch x  V
+            
+            # for hierarchical affinity
+            self.tree_topic_bow = {topic_idx: tf.expand_dims(self.topic_bow[i], 0) for i, topic_idx in enumerate(self.topic_idxs)}
             
         # define losses
         self.topic_losses_recon = -tf.reduce_sum(tf.multiply(self.t_variables['bow'], self.logits_bow), 1)
         self.topic_loss_recon = tf.reduce_mean(self.topic_losses_recon) # negative log likelihood of each words
 
         self.topic_losses_kl = compute_kl_losses(means_bow, logvars_bow) # KL divergence b/w latent dist & gaussian std
-        self.topic_loss_kl = tf.reduce_mean(self.topic_losses_kl, 0) #mean of kl_losses over batches        
+        self.topic_loss_kl = tf.reduce_mean(self.topic_losses_kl, 0) # mean of kl_losses over batches        
+
+        def get_topic_params_prior(topic_params, topic_param_root_prior):
+            tree_topic_params_prior = {}
+            tree_topic_params_prior[0] = tf.expand_dims(topic_param_root_prior, 0)
+            for child_idx, parent_idx in self.child_to_parent_idxs.items():
+                tree_topic_params_prior[child_idx] = tf.expand_dims(topic_params[self.topic_idxs.index(parent_idx)], 0)
+            topic_params = tf.concat([tree_topic_params_prior[topic_idx] for topic_idx in self.topic_idxs], 0)
+            return topic_params
         
-        self.topic_embeddings = tf.concat([self.tree_topic_embeddings[topic_idx] for topic_idx in self.topic_idxs], 0) # temporary
-        self.topic_loss_reg = get_topic_loss_reg(self.tree_topic_embeddings)
+        self.topic_means_prior = get_topic_params_prior(self.topic_means, tf.zeros(self.config.dim_latent_topic))
+        self.topic_logvars_prior = get_topic_params_prior(self.topic_logvars, tf.zeros(self.config.dim_latent_topic))
+        self.topic_losses_gauss = compute_kl_losses(self.topic_means, self.topic_logvars, means_prior=self.topic_means_prior, logvars_prior=self.topic_logvars_prior)
+        self.topic_loss_gauss = tf.reduce_mean(self.topic_losses_gauss, 0) # mean of kl_losses over topics
+        
+        self.topic_loss_reg = get_topic_loss_reg(self.topic_bow)
 
         self.global_step = tf.Variable(0, name='global_step',trainable=False)
 
-        self.loss = self.topic_loss_recon + self.topic_loss_kl + self.config.reg * self.topic_loss_reg
+        self.loss = self.topic_loss_recon + self.topic_loss_kl + self.config.reg * self.topic_loss_reg + self.config.gauss * self.topic_loss_gauss
 
         # define optimizer
         if self.config.opt == 'Adam':
@@ -129,7 +145,7 @@ class HierarchicalNeuralTopicModel():
             optimizer = tf.train.AdagradOptimizer(self.config.lr)
 
         self.grad_vars = optimizer.compute_gradients(self.loss)
-        self.clipped_grad_vars = [(tf.clip_by_value(grad, -self.config.grad_clip, self.config.grad_clip), var) for grad, var in self.grad_vars]
+        self.clipped_grad_vars = [(tf.clip_by_value(grad, -self.config.grad_clip, self.config.grad_clip), var) if grad is not None else (grad, var) for grad, var in self.grad_vars]
         self.opt = optimizer.apply_gradients(self.clipped_grad_vars, global_step=self.global_step)
 
         # monitor
@@ -138,10 +154,7 @@ class HierarchicalNeuralTopicModel():
     
         # growth criteria
         self.n_topics = tf.multiply(tf.expand_dims(self.n_bow, -1), self.prob_topic)
-        
-        self.arcs_bow = tf.acos(tf.matmul(tf.linalg.l2_normalize(self.bow_embeddings, axis=-1), tf.linalg.l2_normalize(self.topic_embeddings, axis=-1), transpose_b=True)) # n_vocab x n_topic
-        self.rads_bow = tf.multiply(tf.matmul(self.t_variables['bow'], self.arcs_bow), self.prob_topic) # n_batch x n_topic
-    
+            
     def get_feed_dict(self, batch, mode='train'):
         bow = np.array([instance.bow for instance in batch]).astype(np.float32)
         keep_prob = self.config.keep_prob if mode == 'train' else 1.0
