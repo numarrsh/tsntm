@@ -51,6 +51,7 @@ def get_config(nb_name):
     parser.add_argument('-upd', '--update_threshold', type=float, default=5e-5)
     parser.add_argument('-cell', type=str, default='rnn')
     parser.add_argument('-static', action='store_true')
+    parser.add_argument('-train_emb', default=True)
     
     parser.add_argument('-tmp', action='store_true')
     parser.add_argument('-tmp2', action='store_true')

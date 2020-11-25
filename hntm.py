@@ -97,7 +97,7 @@ class HierarchicalNeuralTopicModel():
 
         # decode bow
         with tf.variable_scope('shared', reuse=False):
-            self.bow_embeddings = tf.get_variable('emb', [self.config.dim_bow, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # embeddings of vocab
+            self.bow_embeddings = tf.get_variable('emb', [self.config.dim_bow, self.config.dim_emb], dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=self.config.train_emb) # embeddings of vocab
 
         with tf.variable_scope('topic/dec', reuse=False):
             emb_layer = lambda h: tf.layers.Dense(units=self.config.dim_emb, name='output')(tf.nn.tanh(h))
